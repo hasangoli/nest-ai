@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { AccessKeyDto } from './dtos/accessKey.dto';
 import { SignupDto } from './dtos/signup.dto';
 
 @Injectable()
@@ -10,11 +11,10 @@ export class AuthService {
   async signUp(signupDto: SignupDto) {
     const randomUUID = crypto.randomUUID();
     const randomSalt = await bcrypt.genSalt(10);
-    const hashedApiKey = await bcrypt.hash(randomUUID, randomSalt);
     const password = await bcrypt.hash(signupDto.password, randomSalt);
 
     return this.prismaService.user.create({
-      data: { ...signupDto, apiKey: hashedApiKey, password },
+      data: { ...signupDto, apiKey: randomUUID, password },
       select: {
         id: true,
         email: true,
@@ -23,5 +23,20 @@ export class AuthService {
         updatedAt: true,
       },
     });
+  }
+
+  async getApiKey(accessKeyDto: AccessKeyDto): Promise<{ apiKey: string }> {
+    const user = await this.prismaService.user.findFirst({
+      where: { email: accessKeyDto.email },
+    });
+
+    const hasAccess = await bcrypt.compare(
+      accessKeyDto.password,
+      user.password,
+    );
+
+    if (!hasAccess) throw new UnauthorizedException('You do not have access!');
+
+    return { apiKey: user.apiKey };
   }
 }
